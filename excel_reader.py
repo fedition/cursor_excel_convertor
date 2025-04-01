@@ -136,34 +136,37 @@ class ExcelReader(QMainWindow):
             self.process_file(file_path)
 
     def process_file(self, file_path):
+        """处理Excel文件"""
         try:
-            # 显示进度条
-            self.progress_bar.setVisible(True)
-            self.progress_bar.setValue(0)
-            
             # 读取Excel文件
             excel_file = pd.ExcelFile(file_path)
             
-            # 处理数据
-            results = self.data_processor.process_all_data(excel_file)
+            # 创建数据处理器实例
+            processor = DataProcessor()
+            processor.set_input_file_path(file_path)  # 设置输入文件路径
             
-            # 更新进度条
-            self.progress_bar.setValue(100)
+            # 处理每个工作表
+            results = processor.process_all_data(excel_file)
             
-            # 显示结果
-            result_text = "数据处理结果：\n\n"
-            for sheet, result in results.items():
-                result_text += f"{sheet}表：{result}\n"
-            
-            self.result_text.setText(result_text)
-            
-            # 显示处理后的数据
-            self.show_processed_data()
+            # 显示处理结果
+            self.show_results(results)
             
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"处理文件时发生错误：\n{str(e)}")
-        finally:
-            self.progress_bar.setVisible(False)
+            QMessageBox.critical(self, "错误", f"处理文件时出错：{str(e)}")
+
+    def show_results(self, results):
+        # 更新进度条
+        self.progress_bar.setValue(100)
+        
+        # 显示结果
+        result_text = "数据处理结果：\n\n"
+        for sheet, result in results.items():
+            result_text += f"{sheet}表：{result}\n"
+        
+        self.result_text.setText(result_text)
+        
+        # 显示处理后的数据
+        self.show_processed_data()
 
     def show_processed_data(self):
         """显示处理后的数据"""

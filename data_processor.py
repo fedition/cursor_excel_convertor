@@ -4,6 +4,7 @@ from typing import Dict, List, Optional
 from datetime import datetime
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QComboBox, QPushButton, QMessageBox, QApplication
 from PyQt5.QtCore import Qt
+import os
 
 class ColumnMappingDialog(QDialog):
     def __init__(self, missing_columns, original_columns, parent=None):
@@ -54,6 +55,21 @@ class DataProcessor:
         self.suppliers_df: Optional[pd.DataFrame] = None
         self.inventory_df: Optional[pd.DataFrame] = None
         self.members_df: Optional[pd.DataFrame] = None
+        self.processed_data = None
+        self.report = []
+        self.input_file_path = None  # 添加输入文件路径属性
+
+    def set_input_file_path(self, file_path):
+        """设置输入文件路径"""
+        self.input_file_path = file_path
+
+    def get_output_path(self, filename):
+        """获取输出文件路径"""
+        if self.input_file_path:
+            # 获取输入文件所在目录
+            output_dir = os.path.dirname(self.input_file_path)
+            return os.path.join(output_dir, filename)
+        return filename
 
     def process_products(self, df: pd.DataFrame) -> str:
         """处理商品数据"""
@@ -240,28 +256,21 @@ class DataProcessor:
             
             self.products_df = df
             
-            # 保存处理后的数据到Excel文件
-            try:
-                output_path = '商品导入.xlsx'
-                df.to_excel(output_path, index=False)
-                
-                # 生成处理报告
-                report = f"成功处理商品数据，共 {len(df)} 条记录\n"
-                report += f"数据已保存到 {output_path}\n\n"
-                report += "找到的列：\n"
-                for col in found_columns:
-                    report += f"- {col}\n"
-                report += "\n未找到的列（已创建并填充默认值）：\n"
-                for col in header_mapping.keys():
-                    if col not in found_columns:
-                        report += f"- {col}\n"
-                
-                return report
-            except Exception as save_error:
-                return f"成功处理商品数据，共 {len(df)} 条记录\n但保存文件时出错：{str(save_error)}"
-                
+            # 保存处理后的数据
+            output_path = self.get_output_path('商品导入.xlsx')
+            df.to_excel(output_path, index=False)
+            
+            # 生成报告
+            self.report = [
+                f"商品数据处理完成",
+                f"总行数: {len(df)}",
+                f"已保存到: {output_path}"
+            ]
+            
+            return "\n".join(self.report)
+            
         except Exception as e:
-            return f"处理商品数据时出错：{str(e)}"
+            return f"处理商品数据时出错: {str(e)}"
 
     def process_suppliers(self, df: pd.DataFrame) -> str:
         """处理供应商数据"""
@@ -353,32 +362,28 @@ class DataProcessor:
             
             self.suppliers_df = df
             
-            # 保存处理后的数据到Excel文件
-            try:
-                output_path = '供应商导入.xlsx'
-                df.to_excel(output_path, index=False)
-                
-                # 生成处理报告
-                report = f"成功处理供应商数据，共 {len(df)} 条记录\n"
-                report += f"数据已保存到 {output_path}\n\n"
-                report += "找到的列：\n"
-                for col in found_columns:
-                    report += f"- {col}\n"
-                report += "\n未找到的列（已创建并填充默认值）：\n"
-                for col in header_mapping.keys():
-                    if col not in found_columns:
-                        report += f"- {col}\n"
-                
-                return report
-            except Exception as save_error:
-                return f"成功处理供应商数据，共 {len(df)} 条记录\n但保存文件时出错：{str(save_error)}"
-                
+            # 保存处理后的数据
+            output_path = self.get_output_path('供应商导入.xlsx')
+            df.to_excel(output_path, index=False)
+            
+            # 生成报告
+            self.report = [
+                f"供应商数据处理完成",
+                f"总行数: {len(df)}",
+                f"已保存到: {output_path}"
+            ]
+            
+            return "\n".join(self.report)
+            
         except Exception as e:
-            return f"处理供应商数据时出错：{str(e)}"
+            return f"处理供应商数据时出错: {str(e)}"
 
     def process_inventory(self, df: pd.DataFrame) -> str:
         """处理库存数据"""
         try:
+            # 确保所有列名都是字符串类型
+            df.columns = df.columns.astype(str)
+            
             # 定义表头映射关系
             header_mapping = {
                 'pro系统编码': ['pro系统编码', '系统编码', '编码', '商品编码'],
@@ -399,7 +404,7 @@ class DataProcessor:
             found_columns = set()  # 用于记录找到的列
             for new_col, possible_names in header_mapping.items():
                 for old_col in df.columns:
-                    if old_col in possible_names:
+                    if str(old_col) in possible_names:
                         new_columns[old_col] = new_col
                         found_columns.add(new_col)
                         break
@@ -432,121 +437,74 @@ class DataProcessor:
             
             # 对字符串类型的列进行清理
             for col in df.columns:
-                if df[col].dtype == 'object':
-                    # 将非字符串值转换为字符串
+                if col not in ['数量', '单价']:  # 数值类型字段单独处理
                     df[col] = df[col].astype(str)
-                    # 清理字符串
                     df[col] = df[col].str.strip()
-                    # 将空字符串和'nan'替换为空字符串
                     df[col] = df[col].replace(['nan', 'None', 'NULL', ''], '')
             
-            # 类型转换（如果存在这些列）
-            if '数量' in df.columns:
-                df['数量'] = pd.to_numeric(df['数量'], errors='coerce')
-            if '单价' in df.columns:
-                df['单价'] = pd.to_numeric(df['单价'], errors='coerce')
+            # 处理数值类型字段
+            df['数量'] = pd.to_numeric(df['数量'], errors='coerce')
+            df['单价'] = pd.to_numeric(df['单价'], errors='coerce')
+            df['数量'] = df['数量'].fillna(0)
+            df['单价'] = df['单价'].fillna(0.0)
             
             # 处理日期字段
             if '生产日期' in df.columns:
-                # 首先尝试直接转换为日期
                 df['生产日期'] = pd.to_datetime(df['生产日期'], errors='coerce')
-                
-                # 处理无法直接转换的日期
+                # 处理YYYYMM格式的日期
                 mask = df['生产日期'].isna()
                 if mask.any():
-                    # 获取无法转换的行的原始值
-                    invalid_dates = df.loc[mask, '生产日期'].astype(str)
-                    
-                    # 处理类似202406这样的格式
                     def parse_date(date_str):
                         try:
-                            # 清理字符串
-                            date_str = str(date_str).strip()
-                            # 尝试匹配6位数字格式（年月）
-                            if len(date_str) == 6 and date_str.isdigit():
+                            if isinstance(date_str, str) and len(date_str) == 6:
                                 year = int(date_str[:4])
                                 month = int(date_str[4:])
-                                # 设置为该月1日
-                                return pd.Timestamp(year=year, month=month, day=1)
+                                return pd.Timestamp(year, month, 1)
                             return pd.NaT
                         except:
                             return pd.NaT
                     
-                    # 应用日期解析
-                    df.loc[mask, '生产日期'] = invalid_dates.apply(parse_date)
+                    df.loc[mask, '生产日期'] = df.loc[mask, '生产日期'].astype(str).apply(parse_date)
             
             if '有效期至' in df.columns:
-                # 首先尝试直接转换为日期
                 df['有效期至'] = pd.to_datetime(df['有效期至'], errors='coerce')
-                
-                # 处理无法直接转换的日期
+                # 处理YYYYMM格式的日期
                 mask = df['有效期至'].isna()
                 if mask.any():
-                    # 获取无法转换的行的原始值
-                    invalid_dates = df.loc[mask, '有效期至'].astype(str)
-                    
-                    # 处理类似202406这样的格式
                     def parse_date(date_str):
                         try:
-                            # 清理字符串
-                            date_str = str(date_str).strip()
-                            # 尝试匹配6位数字格式（年月）
-                            if len(date_str) == 6 and date_str.isdigit():
+                            if isinstance(date_str, str) and len(date_str) == 6:
                                 year = int(date_str[:4])
                                 month = int(date_str[4:])
-                                # 设置为该月1日
-                                return pd.Timestamp(year=year, month=month, day=1)
+                                return pd.Timestamp(year, month, 1)
                             return pd.NaT
                         except:
                             return pd.NaT
                     
-                    # 应用日期解析
-                    df.loc[mask, '有效期至'] = invalid_dates.apply(parse_date)
-                
-                # 检查并修正有效期小于生产日期的情况
-                if '生产日期' in df.columns:
-                    mask = (df['有效期至'] < df['生产日期']) & (~df['有效期至'].isna()) & (~df['生产日期'].isna())
-                    if mask.any():
-                        # 将生产日期设置为有效期前一年
-                        df.loc[mask, '生产日期'] = df.loc[mask, '有效期至'].apply(lambda x: x - pd.DateOffset(years=1))
+                    df.loc[mask, '有效期至'] = df.loc[mask, '有效期至'].astype(str).apply(parse_date)
             
-            # 处理批号
-            if '批号' in df.columns:
-                # 转换为字符串并清理
-                df['批号'] = df['批号'].astype(str)
-                # 清理空白字符
-                df['批号'] = df['批号'].str.strip()
-                # 将无效值替换为空字符串
-                df['批号'] = df['批号'].replace(['nan', 'None', 'NULL', ''], '')
-
+            # 检查生产日期和有效期至的关系
+            if '生产日期' in df.columns and '有效期至' in df.columns:
+                mask = (df['有效期至'].notna()) & (df['生产日期'].notna())
+                invalid_dates = mask & (df['有效期至'] < df['生产日期'])
+                if invalid_dates.any():
+                    # 将生产日期设置为有效期至的前一年
+                    df.loc[invalid_dates, '生产日期'] = df.loc[invalid_dates, '有效期至'].apply(
+                        lambda x: pd.Timestamp(x.year - 1, x.month, 1)
+                    )
+            
             # 检查批号、生产日期和有效期至是否同时为空
             if '批号' in df.columns and '生产日期' in df.columns and '有效期至' in df.columns:
-                # 创建掩码，检查三个字段是否同时为空
                 mask = (
                     (df['批号'] == '') & 
                     (df['生产日期'].isna()) & 
                     (df['有效期至'].isna())
                 )
                 if mask.any():
-                    # 将同时为空的情况下的批号设置为"无"
                     df.loc[mask, '批号'] = '无'
-
+            
             # 删除重复行
             df = df.drop_duplicates()
-            
-            # 处理缺失值
-            fillna_dict = {
-                'pro系统编码': '',
-                '原系统商品编码': '',
-                '批号': '',
-                '生产日期': pd.NaT,
-                '有效期至': pd.NaT,
-                '数量': 0,
-                '单价': 0,
-                '供应商': ''
-            }
-            
-            df = df.fillna(fillna_dict)
             
             # 只保留目标列
             target_columns = list(header_mapping.keys())
@@ -554,35 +512,28 @@ class DataProcessor:
             
             self.inventory_df = df
             
-            # 保存处理后的数据到Excel文件
-            try:
-                output_path = '库存导入.xlsx'
-                df.to_excel(output_path, index=False)
-                
-                # 生成处理报告
-                report = f"成功处理库存数据，共 {len(df)} 条记录\n"
-                report += f"数据已保存到 {output_path}\n\n"
-                report += "找到的列：\n"
-                for col in found_columns:
-                    report += f"- {col}\n"
-                report += "\n未找到的列（已创建并填充默认值）：\n"
-                for col in header_mapping.keys():
-                    if col not in found_columns:
-                        report += f"- {col}\n"
-                
-                return report
-            except Exception as save_error:
-                return f"成功处理库存数据，共 {len(df)} 条记录\n但保存文件时出错：{str(save_error)}"
-                
+            # 保存处理后的数据
+            output_path = self.get_output_path('库存导入.xlsx')
+            df.to_excel(output_path, index=False)
+            
+            # 生成报告
+            self.report = [
+                f"库存数据处理完成",
+                f"总行数: {len(df)}",
+                f"已保存到: {output_path}"
+            ]
+            
+            return "\n".join(self.report)
+            
         except Exception as e:
-            return f"处理库存数据时出错：{str(e)}"
+            return f"处理库存数据时出错: {str(e)}"
 
     def process_members(self, df: pd.DataFrame) -> str:
         """处理会员数据"""
         try:
             # 定义表头映射关系
             header_mapping = {
-                '会员姓名': ['会员姓名', '姓名', '客户姓名', '顾客姓名','客户名称'],
+                '会员姓名': ['会员姓名', '姓名', '客户姓名', '顾客姓名','客户名称','持卡人'],
                 '手机号': ['手机号', '手机号码', '联系电话', '手机'],
                 '座机号': ['座机号', '固定电话', '电话', '座机','电话号码'],
                 '性别': ['性别', '性别类型'],
@@ -756,47 +707,43 @@ class DataProcessor:
             
             self.members_df = df
             
-            # 保存处理后的数据到Excel文件
-            try:
-                output_path = '会员导入.xlsx'
-                df.to_excel(output_path, index=False)
-                
-                # 生成处理报告
-                report = f"成功处理会员数据，共 {len(df)} 条记录\n"
-                report += f"数据已保存到 {output_path}\n\n"
-                report += "找到的列：\n"
-                for col in found_columns:
-                    report += f"- {col}\n"
-                report += "\n未找到的列（已创建并填充默认值）：\n"
-                for col in header_mapping.keys():
-                    if col not in found_columns:
-                        report += f"- {col}\n"
-                
-                return report
-            except Exception as save_error:
-                return f"成功处理会员数据，共 {len(df)} 条记录\n但保存文件时出错：{str(save_error)}"
-                
+            # 保存处理后的数据
+            output_path = self.get_output_path('会员导入.xlsx')
+            df.to_excel(output_path, index=False)
+            
+            # 生成报告
+            self.report = [
+                f"会员数据处理完成",
+                f"总行数: {len(df)}",
+                f"已保存到: {output_path}"
+            ]
+            
+            return "\n".join(self.report)
+            
         except Exception as e:
-            return f"处理会员数据时出错：{str(e)}"
+            return f"处理会员数据时出错: {str(e)}"
 
     def process_all_data(self, excel_file: pd.ExcelFile) -> Dict[str, str]:
         """处理所有数据"""
         results = {}
         
+        # 获取Excel文件中的所有表名
+        sheet_names = excel_file.sheet_names
+        
         # 按顺序处理各个表
-        if '商品' in excel_file.sheet_names:
+        if '商品' in sheet_names:
             df = pd.read_excel(excel_file, sheet_name='商品')
             results['商品'] = self.process_products(df)
             
-        if '供应商' in excel_file.sheet_names:
+        if '供应商' in sheet_names:
             df = pd.read_excel(excel_file, sheet_name='供应商')
             results['供应商'] = self.process_suppliers(df)
             
-        if '库存' in excel_file.sheet_names:
+        if '库存' in sheet_names:
             df = pd.read_excel(excel_file, sheet_name='库存')
             results['库存'] = self.process_inventory(df)
             
-        if '会员' in excel_file.sheet_names:
+        if '会员' in sheet_names:
             df = pd.read_excel(excel_file, sheet_name='会员')
             results['会员'] = self.process_members(df)
             
